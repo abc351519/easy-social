@@ -361,6 +361,23 @@ button.secondary {
   text-align: center;
 }
 
+.captcha-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.captcha-row img {
+  height: 60px;
+  width: auto;
+}
+
 @media (max-width: 860px) {
   .layout.with-sidebar {
     grid-template-columns: 1fr;

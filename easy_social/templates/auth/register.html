@@ -16,9 +16,23 @@
         Password
         <input name="password" type="password" autocomplete="new-password" required>
       </label>
+      <div class="captcha-group">
+        <label>CAPTCHA</label>
+        <div class="captcha-row">
+          <img id="captcha-img" src="{{ url_for('auth.captcha_image') }}" alt="CAPTCHA" style="border-radius:4px;">
+          <button type="button" id="refresh-captcha" class="link-button" aria-label="Refresh CAPTCHA">&#x21bb; Refresh</button>
+        </div>
+        <input name="captcha" autocomplete="off" placeholder="Enter the characters above" required>
+      </div>
       <button type="submit">Register</button>
     </form>
     <p class="muted">Already registered? <a href="{{ url_for('auth.login') }}">Log in</a>.</p>
   </section>
+  <script>
+    document.getElementById('refresh-captcha').addEventListener('click', function () {
+      var img = document.getElementById('captcha-img');
+      img.src = "{{ url_for('auth.captcha_image') }}?" + Date.now();
+    });
+  </script>
 {% endblock %}
 
