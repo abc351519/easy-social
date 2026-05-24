@@ -1,12 +1,50 @@
 from __future__ import annotations
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+import io
+import secrets
+import string
+
+from captcha.image import ImageCaptcha
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from .extensions import db
 from .models import User
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+_CAPTCHA_LENGTH = 5
+_CAPTCHA_CHARS = string.ascii_uppercase + string.digits
+
+
+def _generate_captcha_text() -> str:
+    return "".join(secrets.choice(_CAPTCHA_CHARS) for _ in range(_CAPTCHA_LENGTH))
+
+
+def _validate_captcha(user_input: str) -> bool:
+    # Bypass validation in TESTING mode unless CAPTCHA_FORCE_TEXT is set.
+    # CAPTCHA_FORCE_TEXT enables real validation in E2E tests by using a known text.
+    if current_app.config.get("TESTING") and not current_app.config.get("CAPTCHA_FORCE_TEXT"):
+        return True
+    expected = session.pop("captcha_text", None)
+    if expected is None:
+        return False
+    return user_input.strip().upper() == expected.upper()
+
+
+@bp.get("/captcha")
+def captcha_image() -> Response:
+    force_text = current_app.config.get("CAPTCHA_FORCE_TEXT")
+    text = force_text if force_text else _generate_captcha_text()
+    session["captcha_text"] = text
+    image = ImageCaptcha()
+    data = image.generate(text)
+    img_bytes = io.BytesIO(data.read())
+    response = Response(img_bytes.getvalue(), mimetype="image/png")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -18,12 +56,17 @@ def register():
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
+        captcha_input = request.form.get("captcha", "")
 
         error = None
         if not username or not email or not password:
             error = "Username, email, and password are required."
         elif len(username) > 40:
             error = "Username must be 40 characters or fewer."
+        elif not current_app.config.get("TESTING") and not captcha_input:
+            error = "Please enter the CAPTCHA."
+        elif not _validate_captcha(captcha_input):
+            error = "Incorrect CAPTCHA. Please try again."
         elif User.query.filter_by(username=username).first():
             error = "That username is already taken."
         elif User.query.filter_by(email=email).first():

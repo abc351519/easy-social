@@ -209,3 +209,138 @@ def test_following_user_adds_their_posts_to_feed(browser, live_server):
 
     browser.get(f"{live_server}/")
     wait_for_text(browser, "Bob browser update")
+
+
+# ---------------------------------------------------------------------------
+# CAPTCHA E2E fixtures: separate live server with real captcha validation
+# ---------------------------------------------------------------------------
+
+_CAPTCHA_FORCE = "TESTX"
+
+
+@pytest.fixture(scope="module")
+def captcha_ui_app():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        app = create_app(
+            {
+                "TESTING": True,
+                "SECRET_KEY": "test-captcha",
+                "SQLALCHEMY_DATABASE_URI": f"sqlite:///{temp_path / 'captcha_ui.sqlite'}",
+                "UPLOAD_FOLDER": str(temp_path / "uploads"),
+                "MEDIA_STORAGE_BACKEND": "local",
+                "WTF_CSRF_ENABLED": False,
+                "CAPTCHA_FORCE_TEXT": _CAPTCHA_FORCE,
+            }
+        )
+        with app.app_context():
+            db.create_all()
+        yield app
+
+
+@pytest.fixture(scope="module")
+def captcha_live_server(captcha_ui_app):
+    try:
+        server = make_server("127.0.0.1", 0, captcha_ui_app, threaded=True)
+    except SystemExit:
+        pytest.skip("Captcha live server could not bind to a local port")
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    yield f"http://127.0.0.1:{server.server_port}"
+
+    server.shutdown()
+    thread.join(timeout=5)
+
+
+@pytest.fixture(autouse=False)
+def clean_captcha_database(captcha_ui_app):
+    with captcha_ui_app.app_context():
+        db.session.query(Comment).delete()
+        db.session.query(Post).delete()
+        db.session.query(User).delete()
+        db.session.commit()
+    yield
+
+
+# ---------------------------------------------------------------------------
+# CAPTCHA E2E Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.ui
+def test_captcha_image_is_displayed_on_register_page(browser, live_server):
+    """The register page must show a CAPTCHA image and refresh button."""
+    browser.get(f"{live_server}/auth/register")
+    WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.ID, "captcha-img"))
+    )
+    img = browser.find_element(By.ID, "captcha-img")
+    assert img.is_displayed()
+    refresh_btn = browser.find_element(By.ID, "refresh-captcha")
+    assert refresh_btn.is_displayed()
+
+
+@pytest.mark.ui
+def test_captcha_refresh_button_reloads_image(browser, live_server):
+    """Clicking the refresh button changes the captcha image src."""
+    browser.get(f"{live_server}/auth/register")
+    WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.ID, "captcha-img")))
+    img = browser.find_element(By.ID, "captcha-img")
+    original_src = img.get_attribute("src")
+
+    browser.find_element(By.ID, "refresh-captcha").click()
+    WebDriverWait(browser, 5).until(
+        lambda d: d.find_element(By.ID, "captcha-img").get_attribute("src") != original_src
+    )
+    new_src = browser.find_element(By.ID, "captcha-img").get_attribute("src")
+    assert new_src != original_src
+
+
+def wait_for_captcha_image_loaded(browser):
+    """Wait until the CAPTCHA image has fully loaded and the server session is seeded."""
+    WebDriverWait(browser, 10).until(
+        lambda d: d.execute_script(
+            "var img = document.getElementById('captcha-img');"
+            "return img && img.complete && img.naturalWidth > 0;"
+        )
+    )
+
+
+@pytest.mark.ui
+def test_register_with_correct_captcha_succeeds(browser, captcha_live_server, clean_captcha_database):
+    """Submitting the correct CAPTCHA allows registration to complete."""
+    browser.get(f"{captcha_live_server}/auth/register")
+    form = WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
+    )
+    wait_for_captcha_image_loaded(browser)
+
+    set_field_value(browser, form.find_element(By.NAME, "username"), "captchauser")
+    set_field_value(browser, form.find_element(By.NAME, "email"), "captchauser@example.com")
+    set_field_value(browser, form.find_element(By.NAME, "password"), "password")
+    set_field_value(browser, form.find_element(By.NAME, "captcha"), _CAPTCHA_FORCE)
+    submit_form(browser, form)
+    wait_for_feed(browser)
+
+
+@pytest.mark.ui
+def test_register_with_wrong_captcha_shows_error(browser, captcha_live_server, clean_captcha_database):
+    """Submitting a wrong CAPTCHA keeps the user on the register page with an error."""
+    browser.get(f"{captcha_live_server}/auth/register")
+    form = WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
+    )
+    wait_for_captcha_image_loaded(browser)
+
+    set_field_value(browser, form.find_element(By.NAME, "username"), "captchauser2")
+    set_field_value(browser, form.find_element(By.NAME, "email"), "captchauser2@example.com")
+    set_field_value(browser, form.find_element(By.NAME, "password"), "password")
+    set_field_value(browser, form.find_element(By.NAME, "captcha"), "WRONG")
+    submit_form(browser, form)
+
+    WebDriverWait(browser, 5).until(
+        EC.text_to_be_present_in_element((By.TAG_NAME, "body"), "Incorrect CAPTCHA")
+    )
+    assert "register" in browser.current_url
