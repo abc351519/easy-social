@@ -92,7 +92,7 @@ class Post(db.Model):
 
     __table_args__ = (
         CheckConstraint(
-            "(length(body) > 0) OR (media_filename IS NOT NULL) OR (repost_of_id IS NOT NULL) OR (is_poll = 1)",
+            "(length(body) > 0) OR (media_filename IS NOT NULL) OR (repost_of_id IS NOT NULL) OR (is_poll IS TRUE)",
             name="ck_post_has_content",
         ),
     )
