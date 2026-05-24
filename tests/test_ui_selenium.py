@@ -140,13 +140,13 @@ def logout_via_ui(browser):
     wait_for_login(browser)
 
 
-def login_via_ui(browser, live_server: str, username: str, password: str = "password"):
+def login_via_ui(browser, live_server: str, username: str, password: str | None = None):
     browser.get(f"{live_server}/auth/login")
     form = WebDriverWait(browser, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
     )
     set_field_value(browser, form.find_element(By.NAME, "username_or_email"), username)
-    set_field_value(browser, form.find_element(By.NAME, "password"), password)
+    set_field_value(browser, form.find_element(By.NAME, "password"), password or _TEST_UI_PASSWORD)
     submit_form(browser, form)
     wait_for_feed(browser)
 
@@ -326,6 +326,7 @@ def test_following_user_adds_their_posts_to_feed(browser, live_server):
 # ---------------------------------------------------------------------------
 
 _CAPTCHA_FORCE = "TESTX"
+_TEST_UI_PASSWORD = "password"
 
 
 @pytest.fixture(scope="module")

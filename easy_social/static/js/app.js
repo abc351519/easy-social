@@ -78,9 +78,13 @@
       clearPreview(preview, frame, name, input, state);
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
+
+    return function clearMedia() {
+      clearPreview(preview, frame, name, input, state);
+    };
   }
 
-  function setupComposerMode(composer) {
+  function setupComposerMode(composer, clearMedia) {
     const typeInputs = composer.querySelectorAll("[data-post-type-input]");
     const pollFields = composer.querySelector("[data-poll-fields]");
     const mediaPicker = composer.querySelector("[data-media-picker]");
@@ -93,6 +97,9 @@
 
     function syncMode() {
       const isPoll = composer.querySelector('[name="post_type"]:checked')?.value === "poll";
+      if (isPoll && clearMedia) {
+        clearMedia();
+      }
       pollFields.hidden = !isPoll;
       if (mediaPicker) {
         mediaPicker.hidden = isPoll;
@@ -210,8 +217,8 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll("form.composer").forEach(function (composer) {
-      setupComposer(composer);
-      setupComposerMode(composer);
+      const clearMedia = setupComposer(composer);
+      setupComposerMode(composer, clearMedia);
     });
     setupPollVoting();
   });
