@@ -298,6 +298,16 @@ def test_captcha_refresh_button_reloads_image(browser, live_server):
     assert new_src != original_src
 
 
+def wait_for_captcha_image_loaded(browser):
+    """Wait until the CAPTCHA image has fully loaded and the server session is seeded."""
+    WebDriverWait(browser, 10).until(
+        lambda d: d.execute_script(
+            "var img = document.getElementById('captcha-img');"
+            "return img && img.complete && img.naturalWidth > 0;"
+        )
+    )
+
+
 @pytest.mark.ui
 def test_register_with_correct_captcha_succeeds(browser, captcha_live_server, clean_captcha_database):
     """Submitting the correct CAPTCHA allows registration to complete."""
@@ -305,8 +315,7 @@ def test_register_with_correct_captcha_succeeds(browser, captcha_live_server, cl
     form = WebDriverWait(browser, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
     )
-    # Load captcha image first so server stores the forced text in session
-    browser.find_element(By.ID, "captcha-img")
+    wait_for_captcha_image_loaded(browser)
 
     set_field_value(browser, form.find_element(By.NAME, "username"), "captchauser")
     set_field_value(browser, form.find_element(By.NAME, "email"), "captchauser@example.com")
@@ -323,7 +332,7 @@ def test_register_with_wrong_captcha_shows_error(browser, captcha_live_server, c
     form = WebDriverWait(browser, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
     )
-    browser.find_element(By.ID, "captcha-img")
+    wait_for_captcha_image_loaded(browser)
 
     set_field_value(browser, form.find_element(By.NAME, "username"), "captchauser2")
     set_field_value(browser, form.find_element(By.NAME, "email"), "captchauser2@example.com")

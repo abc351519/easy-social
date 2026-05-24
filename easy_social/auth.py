@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-import random
+import secrets
 import string
 
 from captcha.image import ImageCaptcha
@@ -18,7 +18,7 @@ _CAPTCHA_CHARS = string.ascii_uppercase + string.digits
 
 
 def _generate_captcha_text() -> str:
-    return "".join(random.choices(_CAPTCHA_CHARS, k=_CAPTCHA_LENGTH))
+    return "".join(secrets.choice(_CAPTCHA_CHARS) for _ in range(_CAPTCHA_LENGTH))
 
 
 def _validate_captcha(user_input: str) -> bool:
@@ -40,7 +40,11 @@ def captcha_image() -> Response:
     image = ImageCaptcha()
     data = image.generate(text)
     img_bytes = io.BytesIO(data.read())
-    return Response(img_bytes.getvalue(), mimetype="image/png")
+    response = Response(img_bytes.getvalue(), mimetype="image/png")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @bp.route("/register", methods=["GET", "POST"])

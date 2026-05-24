@@ -202,7 +202,7 @@ def test_register_with_missing_captcha_fails(captcha_client):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert b"CAPTCHA" in response.data
+    assert b"Please enter the CAPTCHA" in response.data
 
 
 @pytest.mark.integration
@@ -212,7 +212,7 @@ def test_captcha_is_single_use(captcha_client):
         sess["captcha_text"] = "ABCDE"
 
     # First registration consumes the captcha
-    captcha_client.post(
+    first_response = captcha_client.post(
         "/auth/register",
         data={
             "username": "alice",
@@ -222,6 +222,7 @@ def test_captcha_is_single_use(captcha_client):
         },
         follow_redirects=True,
     )
+    assert b"Feed" in first_response.data
 
     # Log out alice so the register route is accessible again
     captcha_client.post("/auth/logout", follow_redirects=True)
