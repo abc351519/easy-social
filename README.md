@@ -6,6 +6,7 @@ A small Twitter-like social media app built with Flask.
 
 - Register, log in, and log out with Flask-Login.
 - Create posts containing text, images, videos, or a combination.
+- Create poll posts with 2 to 4 options and live vote percentages.
 - Repost existing posts.
 - Comment on posts.
 - Follow and unfollow users.

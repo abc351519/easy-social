@@ -1,0 +1,26 @@
+{% set summary = poll_summaries[content.id] %}
+<section class="poll" data-poll data-post-id="{{ content.id }}">
+  <div class="poll-options">
+    {% for option in summary.options %}
+      <div class="poll-option{% if summary.user_vote_option_id %} is-results{% endif %}{% if summary.user_vote_option_id == option.id %} is-selected{% endif %}" data-option-id="{{ option.id }}">
+        {% if summary.user_vote_option_id %}
+          <div class="poll-result">
+            <div class="poll-result-header">
+              <span class="poll-label">{{ option.label }}</span>
+              <span class="poll-meta">{{ option.percentage }}% · {{ option.vote_count }} vote{{ 's' if option.vote_count != 1 else '' }}</span>
+            </div>
+            <div class="poll-bar-track">
+              <div class="poll-bar-fill" style="width: {{ option.percentage }}%"></div>
+            </div>
+          </div>
+        {% else %}
+          <form method="post" action="{{ url_for('social.cast_vote', post_id=content.id) }}" class="poll-vote-form">
+            <input type="hidden" name="option_id" value="{{ option.id }}">
+            <button type="submit" class="poll-choice">{{ option.label }}</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <p class="poll-total muted">{{ summary.total_votes }} vote{{ 's' if summary.total_votes != 1 else '' }}</p>
+</section>

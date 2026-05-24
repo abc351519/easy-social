@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import joinedload
 
 from .extensions import db
 from .media import save_media
-from .models import Comment, Post, User, followers
+from .models import Comment, Poll, Post, User, followers
+from .poll_service import (
+    cast_poll_vote,
+    create_poll_post,
+    poll_summaries_for_posts,
+    poll_summary_as_json,
+)
 
 bp = Blueprint("social", __name__)
 
@@ -16,6 +22,7 @@ def _post_query():
     return Post.query.options(
         joinedload(Post.author),
         joinedload(Post.repost_of).joinedload(Post.author),
+        joinedload(Post.poll).joinedload(Poll.options),
     )
 
 
@@ -51,6 +58,16 @@ def _followed_user_ids(users: list[User]) -> set[int]:
     }
 
 
+def _render_posts_page(template_name: str, posts: list[Post], **context):
+    return render_template(
+        template_name,
+        posts=posts,
+        comment_counts=_comment_counts_for_posts(posts),
+        poll_summaries=poll_summaries_for_posts(posts, current_user.id),
+        **context,
+    )
+
+
 @bp.route("/")
 @login_required
 def feed():
@@ -64,11 +81,7 @@ def feed():
         .limit(100)
         .all()
     )
-    return render_template(
-        "social/feed.html",
-        posts=posts,
-        comment_counts=_comment_counts_for_posts(posts),
-    )
+    return _render_posts_page("social/feed.html", posts)
 
 
 @bp.route("/explore")
@@ -76,11 +89,10 @@ def feed():
 def explore():
     posts = _post_query().order_by(desc(Post.created_at)).limit(100).all()
     users = User.query.filter(User.id != current_user.id).order_by(User.username).limit(50).all()
-    return render_template(
+    return _render_posts_page(
         "social/explore.html",
-        posts=posts,
+        posts,
         users=users,
-        comment_counts=_comment_counts_for_posts(posts),
         followed_user_ids=_followed_user_ids(users),
     )
 
@@ -88,7 +100,20 @@ def explore():
 @bp.post("/posts")
 @login_required
 def create_post():
+    post_type = request.form.get("post_type", "standard")
     body = request.form.get("body", "").strip()
+
+    if post_type == "poll":
+        try:
+            create_poll_post(
+                current_user,
+                body,
+                request.form.getlist("poll_options"),
+            )
+            db.session.commit()
+        except ValueError as exc:
+            flash(str(exc), "error")
+        return redirect(request.referrer or url_for("social.feed"))
 
     try:
         media_filename, media_type = save_media(request.files.get("media"))
@@ -115,13 +140,46 @@ def create_post():
 @login_required
 def post_detail(post_id: int):
     post = _post_query().filter(Post.id == post_id).first_or_404()
-    comments = post.comments.order_by(Comment.created_at.asc()).all()
+    comments = post.display_post.comments.order_by(Comment.created_at.asc()).all()
+    poll_summaries = poll_summaries_for_posts([post], current_user.id)
     return render_template(
         "social/post_detail.html",
         post=post,
         comments=comments,
         comment_counts={post.display_post.id: len(comments)},
+        poll_summaries=poll_summaries,
     )
+
+
+@bp.post("/posts/<int:post_id>/vote")
+@login_required
+def cast_vote(post_id: int):
+    post = _post_query().filter(Post.id == post_id).first_or_404()
+    content = post.display_post
+    poll = content.poll
+    if poll is None:
+        abort(404)
+
+    option_id = request.form.get("option_id", type=int)
+    if option_id is None:
+        message = "Choose a poll option before voting."
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify({"error": message}), 400
+        flash(message, "error")
+        return redirect(request.referrer or url_for("social.post_detail", post_id=content.id))
+
+    try:
+        summary = cast_poll_vote(poll, current_user.id, option_id)
+    except ValueError as exc:
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify({"error": str(exc)}), 400
+        flash(str(exc), "error")
+        return redirect(request.referrer or url_for("social.post_detail", post_id=content.id))
+
+    if request.accept_mimetypes.best == "application/json":
+        return jsonify(poll_summary_as_json(summary))
+
+    return redirect(request.referrer or url_for("social.post_detail", post_id=content.id))
 
 
 @bp.post("/posts/<int:post_id>/comments")
@@ -170,6 +228,7 @@ def profile(username: str):
         profile_user=user,
         posts=posts,
         comment_counts=_comment_counts_for_posts(posts),
+        poll_summaries=poll_summaries_for_posts(posts, current_user.id),
     )
 
 
