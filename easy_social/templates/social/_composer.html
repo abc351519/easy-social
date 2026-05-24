@@ -1,5 +1,22 @@
-<form method="post" action="{{ url_for('social.create_post') }}" enctype="multipart/form-data" class="composer">
-  <textarea name="body" rows="4" maxlength="2000" placeholder="What is happening?"></textarea>
+<form method="post" action="{{ url_for('social.create_post') }}" enctype="multipart/form-data" class="composer" data-composer>
+  <div class="composer-mode">
+    <label class="composer-mode-option">
+      <input type="radio" name="post_type" value="standard" checked data-post-type-input>
+      <span>Post</span>
+    </label>
+    <label class="composer-mode-option">
+      <input type="radio" name="post_type" value="poll" data-post-type-input>
+      <span>Poll</span>
+    </label>
+  </div>
+  <textarea name="body" rows="4" maxlength="2000" placeholder="What is happening?" data-composer-body></textarea>
+  <div class="poll-fields" data-poll-fields hidden>
+    <p class="poll-fields-label">Poll options (2 to 4)</p>
+    <input type="text" name="poll_options" maxlength="200" placeholder="Option 1" data-poll-option>
+    <input type="text" name="poll_options" maxlength="200" placeholder="Option 2" data-poll-option>
+    <input type="text" name="poll_options" maxlength="200" placeholder="Option 3 (optional)" data-poll-option>
+    <input type="text" name="poll_options" maxlength="200" placeholder="Option 4 (optional)" data-poll-option>
+  </div>
   <div class="composer-preview" data-media-preview hidden>
     <div class="composer-preview-frame" data-media-preview-frame></div>
     <div class="composer-preview-meta">
@@ -8,10 +25,10 @@
     </div>
   </div>
   <div class="composer-actions">
-    <label class="file-picker">
+    <label class="file-picker" data-media-picker>
       <span>Attach image/video</span>
       <input type="file" name="media" accept="image/*,video/*" data-media-input>
     </label>
-    <button type="submit">Post</button>
+    <button type="submit" data-composer-submit>Post</button>
   </div>
 </form>

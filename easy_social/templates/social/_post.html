@@ -12,6 +12,9 @@
   {% if content.body %}
     <p class="post-body">{{ content.body }}</p>
   {% endif %}
+  {% if content.is_poll and poll_summaries is defined and content.id in poll_summaries %}
+    {% include "social/_poll.html" %}
+  {% endif %}
   {% if content.media_filename %}
     {% if content.media_type == "image" %}
       <img class="post-media" src="{{ media_url(content.media_filename) }}" alt="Post image from {{ content.author.username }}">

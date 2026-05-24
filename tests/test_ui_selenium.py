@@ -10,7 +10,7 @@ from werkzeug.serving import make_server
 
 from easy_social import create_app
 from easy_social.extensions import db
-from easy_social.models import Comment, Post, User
+from easy_social.models import Comment, Poll, PollOption, PollVote, Post, User
 
 selenium = pytest.importorskip("selenium")
 
@@ -85,6 +85,9 @@ def browser():
 def clean_database(ui_app):
     with ui_app.app_context():
         db.session.query(Comment).delete()
+        db.session.query(PollVote).delete()
+        db.session.query(PollOption).delete()
+        db.session.query(Poll).delete()
         db.session.query(Post).delete()
         db.session.query(User).delete()
         db.session.commit()
@@ -135,6 +138,36 @@ def register_via_ui(browser, live_server: str, username: str):
 def logout_via_ui(browser):
     submit_form(browser, browser.find_element(By.CSS_SELECTOR, "header form"))
     wait_for_login(browser)
+
+
+def login_via_ui(browser, live_server: str, username: str, password: str = "password"):
+    browser.get(f"{live_server}/auth/login")
+    form = WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "form.form-stack"))
+    )
+    set_field_value(browser, form.find_element(By.NAME, "username_or_email"), username)
+    set_field_value(browser, form.find_element(By.NAME, "password"), password)
+    submit_form(browser, form)
+    wait_for_feed(browser)
+
+
+def create_poll_via_ui(browser, question: str, options: list[str]):
+    composer = browser.find_element(By.CSS_SELECTOR, "form.composer")
+    poll_radio = composer.find_element(By.CSS_SELECTOR, 'input[name="post_type"][value="poll"]')
+    poll_radio.click()
+    WebDriverWait(browser, 5).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-poll-fields]"))
+    )
+
+    set_field_value(browser, composer.find_element(By.NAME, "body"), question)
+    option_inputs = composer.find_elements(By.CSS_SELECTOR, "[data-poll-option]")
+    for index, label in enumerate(options):
+        set_field_value(browser, option_inputs[index], label)
+
+    submit_button = composer.find_element(By.CSS_SELECTOR, "[data-composer-submit]")
+    WebDriverWait(browser, 5).until(lambda _: submit_button.text.strip() == "Create poll")
+    submit_form(browser, composer)
+    wait_for_text(browser, question)
 
 
 @pytest.mark.parametrize(
@@ -188,6 +221,83 @@ def test_user_can_register_create_post_and_comment(browser, live_server):
     set_field_value(browser, comment_form.find_element(By.NAME, "body"), "First UI comment")
     submit_form(browser, comment_form)
     wait_for_text(browser, "First UI comment")
+
+
+@pytest.mark.ui
+def test_user_can_create_poll_post_from_composer(browser, live_server):
+    register_via_ui(browser, live_server, "pollauthor")
+    create_poll_via_ui(browser, "Favorite season?", ["Spring", "Summer", "Fall"])
+
+    poll_root = browser.find_element(By.CSS_SELECTOR, "[data-poll]")
+    choices = poll_root.find_elements(By.CSS_SELECTOR, ".poll-choice")
+    assert len(choices) == 3
+    assert {choice.text for choice in choices} == {"Spring", "Summer", "Fall"}
+
+
+@pytest.mark.ui
+def test_poll_mode_hides_media_attachment(browser, live_server):
+    register_via_ui(browser, live_server, "pollui")
+    composer = browser.find_element(By.CSS_SELECTOR, "form.composer")
+    composer.find_element(By.CSS_SELECTOR, 'input[name="post_type"][value="poll"]').click()
+
+    WebDriverWait(browser, 5).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, "[data-poll-fields]"))
+    )
+    media_picker = composer.find_element(By.CSS_SELECTOR, "[data-media-picker]")
+    assert not media_picker.is_displayed()
+
+
+@pytest.mark.ui
+def test_user_can_vote_and_see_live_percentages(browser, live_server):
+    register_via_ui(browser, live_server, "pollalice")
+    create_poll_via_ui(browser, "Pick a team", ["Cats", "Dogs"])
+    logout_via_ui(browser)
+
+    register_via_ui(browser, live_server, "pollbob")
+    poll_root = WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-poll]"))
+    )
+    cats_button = poll_root.find_element(By.CSS_SELECTOR, ".poll-choice")
+    assert cats_button.text == "Cats"
+    cats_button.click()
+
+    WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, ".poll-bar-fill"))
+    )
+    WebDriverWait(browser, 10).until(
+        EC.text_to_be_present_in_element((By.CSS_SELECTOR, ".poll-meta"), "100")
+    )
+    assert poll_root.find_elements(By.CSS_SELECTOR, ".poll-choice") == []
+    assert "1 vote" in poll_root.find_element(By.CSS_SELECTOR, ".poll-total").text
+
+
+@pytest.mark.ui
+def test_second_voter_updates_split_percentages(browser, live_server):
+    register_via_ui(browser, live_server, "voterone")
+    create_poll_via_ui(browser, "Best fruit?", ["Apple", "Banana"])
+    logout_via_ui(browser)
+
+    register_via_ui(browser, live_server, "votertwo")
+    poll_root = browser.find_element(By.CSS_SELECTOR, "[data-poll]")
+    poll_root.find_element(By.CSS_SELECTOR, ".poll-choice").click()
+    WebDriverWait(browser, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, ".poll-bar-fill"))
+    )
+    logout_via_ui(browser)
+
+    login_via_ui(browser, live_server, "voterone")
+    browser.get(f"{live_server}/")
+    wait_for_text(browser, "Best fruit?")
+    poll_root = browser.find_element(By.CSS_SELECTOR, "[data-poll]")
+    assert len(poll_root.find_elements(By.CSS_SELECTOR, ".poll-choice")) == 2
+
+    poll_root.find_elements(By.CSS_SELECTOR, ".poll-choice")[1].click()
+    WebDriverWait(browser, 10).until(
+        lambda d: len(d.find_elements(By.CSS_SELECTOR, ".poll-meta")) == 2
+    )
+    metas = [element.text for element in browser.find_elements(By.CSS_SELECTOR, ".poll-meta")]
+    assert any("50" in meta for meta in metas)
+    assert "2 votes" in poll_root.find_element(By.CSS_SELECTOR, ".poll-total").text
 
 
 @pytest.mark.ui
@@ -258,6 +368,9 @@ def captcha_live_server(captcha_ui_app):
 def clean_captcha_database(captcha_ui_app):
     with captcha_ui_app.app_context():
         db.session.query(Comment).delete()
+        db.session.query(PollVote).delete()
+        db.session.query(PollOption).delete()
+        db.session.query(Poll).delete()
         db.session.query(Post).delete()
         db.session.query(User).delete()
         db.session.commit()

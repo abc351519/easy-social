@@ -77,6 +77,17 @@ def test_post_requires_content_media_or_repost(app):
             raise AssertionError("empty post should violate content constraint")
 
 
+def test_poll_post_satisfies_content_constraint(app):
+    with app.app_context():
+        alice = make_user("alice")
+        poll_post = Post(author=alice, body="Question?", is_poll=True)
+        db.session.add_all([alice, poll_post])
+        db.session.commit()
+
+        assert poll_post.is_poll
+        assert poll_post.body == "Question?"
+
+
 def test_repost_display_post_points_to_original(app):
     with app.app_context():
         alice = make_user("alice")
